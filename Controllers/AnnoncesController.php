@@ -3,9 +3,14 @@
 namespace App\Controllers;
 
 use App\Core\Form;
-use App\Models\AnnoncesModel;
-use App\Models\UploadsModel;
-use App\Models\CategoriesModel;
+use App\Exception\FileException;
+//elles sont toutes dans le même namespace
+use App\Models\{AnnoncesModel, UploadsModel, CategoriesModel};
+// use App\Models\UploadsModel;
+// use App\Models\CategoriesModel;
+use App\Services\FileValidator;
+use App\Services\FlashMessage;
+use Exception;
 
 class AnnoncesController extends Controller
 {
@@ -53,6 +58,7 @@ class AnnoncesController extends Controller
     public function ajouter()
     {
 
+
         // On vérifie si l'utilisateur est connecté
         if (isset($_SESSION['user']) && !empty($_SESSION['user']['id'])) {
             // On instancie le model Categories
@@ -63,8 +69,7 @@ class AnnoncesController extends Controller
             // On instancie notre modèle Annonces
             $annonce = new AnnoncesModel;
 
-            // On instancie le model Upload
-            $upload = new UploadsModel;
+
 
 
 
@@ -78,7 +83,7 @@ class AnnoncesController extends Controller
                 $description = strip_tags($_POST['description']);
                 $price = strip_tags($_POST['price']);
                 $category_id = strip_tags($_POST['category_id']);
-                $file_location = $_FILES['file']['tmp_name'];
+
                 // On hydrate
                 $annonce->setTitre($titre)
                     ->setDescription($description)
@@ -88,9 +93,29 @@ class AnnoncesController extends Controller
 
                 // On enregistre
                 $annonce->create();
+                // On récupère l'id de la dernière annonce
+                $lastId = $annonce->getLastId();
+                $check = array_column($lastId, 'id');
+                $lastId = end($check);
+                $annonces_id = $lastId;
 
-                if (isset($_FILES["file"]) && $_FILES["file"]["error"] === 0) {
+                if (isset($_FILES["file"])) {
+                    // je passe le tableau de fichier au constructor de FileValidator
+                    $filesValidator = new FileValidator($_FILES["file"]);
 
+                    //A la premiere erreur rencontrée le script s'arrete et un message flash apparait (voir dossier services)
+                    try {
+
+                        $filesValidator->fileError();
+                        $filesValidator->maxfiles();
+                        $filesValidator->isAllowed();
+                        $filesValidator->maxSize();
+                    } catch (FileException $e) {
+
+                        FlashMessage::addFlash('fileExcetion', $e->getMessage());
+                        header('Location: /annonces/ajouter');
+                        exit;
+                    }
                     // CODE TEST BY GREG
 
                     // $file_location = array_filter($_FILES['file']['name']); //Use something similar before processing files.
@@ -127,11 +152,11 @@ class AnnoncesController extends Controller
                     // On a reçu l'image
                     // On procède aux vérifications
                     // On vérifie toujours l'extension et le type mime
-                    $allowed = [
-                        "jpg" => "image/jpeg",
-                        "png" => "image/png",
-                        "jpeg" => "image/jpeg"
-                    ];
+                    // $allowed = [
+                    //     "jpg" => "image/jpg",
+                    //     "png" => "image/png",
+                    //     "jpeg" => "image/jpeg"
+                    // ];
 
 
                     // Count total files
@@ -143,16 +168,16 @@ class AnnoncesController extends Controller
 
                         $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
                         // On vérifie l'absence de l'extension
-                        if (!array_key_exists($extension, $allowed) || !in_array($filetype, $allowed)) {
-                            // Ici soit l'extension soit le type est incorrect
-                            die("Erreur : Veuillez sélectionner un format de fichier valide.");
-                        }
+                        // if (!array_key_exists($extension, $allowed) || !in_array($filetype, $allowed)) {
+                        //     // Ici soit l'extension soit le type est incorrect
+                        //     die("Erreur : Veuillez sélectionner un format de fichier valide.");
+                        // }
 
                         // Le type est correct
                         // On limite a 1Mo
-                        if ($filesize > 1024 * 1024) {
-                            die("Erreur : La taille du fichier est supérieure à 1Mo.");
-                        }
+                        // if ($filesize > 1024 * 1024) {
+                        //     die("Erreur : La taille du fichier est supérieure à 1Mo.");
+                        // }
 
                         // On génère un nom de fichier unique
                         $newname = md5(uniqid());
@@ -160,10 +185,21 @@ class AnnoncesController extends Controller
                         // On génère le chemin complet
                         $targetFilePath = $newfilename . $newname . '.' . $extension;
 
-                        if (!move_uploaded_file($_FILES["file"][$i]["tmp_name"], $targetFilePath)) {
+                        if (!move_uploaded_file($_FILES["file"]["tmp_name"][$i], $targetFilePath)) {
                             die("Erreur : upload impossible.");
                         }
 
+                        // On instancie le model Upload
+                        $upload = new UploadsModel;
+                        date_default_timezone_set('Europe/Paris');
+                        $date = date('Y-m-d H:i:s');
+
+                        $file_location = $_FILES['file']['tmp_name'][$i];
+                        // On hydrate Uploads
+                        $upload->setAnnonces_id($annonces_id)
+                            ->setFile_location($file_location)
+                            ->setCreated_at($date);
+                        $upload->create();
                         // chmod($newfilename, 0644);
                     }
                 }
@@ -171,19 +207,20 @@ class AnnoncesController extends Controller
 
 
                 // Paramètres de la date
-                date_default_timezone_set('Europe/Paris');
-                $date = date('Y-m-d H:i:s');
-                // On récupère l'id de la dernière annonce
-                $lastId = $annonce->getLastId();
-                $check = array_column($lastId, 'id');
-                $lastId = end($check);
-                $annonces_id = $lastId;
+                // date_default_timezone_set('Europe/Paris');
+                // $date = date('Y-m-d H:i:s');
+                // // On récupère l'id de la dernière annonce
+                // $lastId = $annonce->getLastId();
+                // $check = array_column($lastId, 'id');
+                // $lastId = end($check);
+                // $annonces_id = $lastId;
 
-                // On hydrate Uploads
-                $upload->setAnnonces_id($annonces_id)
-                    ->setFile_location($file_location)
-                    ->setCreated_at($date);
-                $upload->create();
+                // // On hydrate Uploads
+                // $upload->setAnnonces_id($annonces_id)
+                //     ->setFile_location($file_location)
+                //     ->setCreated_at($date);
+                // $upload->create();
+
 
                 // On redirige
                 $_SESSION['message'] = "Votre annonce a été enregistrée avec succès";
@@ -231,7 +268,7 @@ class AnnoncesController extends Controller
                 ->ajoutBouton('Ajouter', ['class' => 'btn btn-primary'])
                 ->finForm();
 
-            $this->render('annonces/ajouter', ['form' => $form->create(), 'categories' => $categoriesModel->findAll()], 'default');
+            $this->render('annonces/ajouter', ['form' => $form->create(), 'categories' => $categoriesModel->findAll(), 'exception' => FlashMessage::getFlash('fileExcetion')], 'default');
         } else {
             // L'utilisateur n'est pas connecté
             $_SESSION['erreur'] = "Vous devez être connecté(e) pour accéder à cette page";
